@@ -1,0 +1,48 @@
+# === Python & Environment ===
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv
+venv/
+env/
+
+# === Configuration & Secrets ===
+# DO NOT ignore the template, but ignore the actual secrets
+.env
+dev.env
+*.local
+# We keep template.env in git so others know what keys they need
+!template.env 
+
+# === RAG Specific: Vector Database & Data ===
+# Ignore large binary FAISS indices
+*.index
+*.faiss
+*.pkl
+# Ignore local document storage to prevent data leakage
+data/
+uploads/
+temp_files/
+
+# === Model Caches ===
+# Ignore downloaded model weights (Sentence-Transformers/HuggingFace)
+models/
+.cache/
+huggingface/
+
+# === Documentation & Design ===
+# Specifically ignoring your Xmind mind map as requested
+*.xmind
+# If you use other design tools
+*.drawio
+*.pdf_export
+
+# === IDE & OS ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+# Windows specific
+desktop.ini
