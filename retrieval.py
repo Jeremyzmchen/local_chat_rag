@@ -4,6 +4,8 @@ from faiss import IndexFlatL2, IndexIVFFlat
 import numpy as np
 import logging
 import requests
+import jieba
+from rank_bm25 import BM25Okapi
 
 
 # Embedding model: default
@@ -93,7 +95,7 @@ class AutoFaissIndex:
         }
     
 
-# Multi-turn retrieval
+# Multi-turn retrieval: 1. FAISS + SerpAPI -> 2. BM25
 def multi_turn_retrieval(initial_query, max_turns=3, enable_web_search=False, client=None):
     """
     Four stages retrieval process:
@@ -118,12 +120,12 @@ def multi_turn_retrieval(initial_query, max_turns=3, enable_web_search=False, cl
     contexts_ids = []
     list_metadata = []
 
-    global faiss_index, faiss_contents_map, faiss_metadata_map, faiss_id_map
+    global faiss_index, faiss_contents_map, faiss_metadata_map, map_index_to_doc_id
 
     for turn in range(max_turns):
         logging.info(f"Turn {turn+1} of {max_turns}: {query}")
 
-        # collect contexts from web search
+        # 1. collect contexts from web search
         web_search_contexts = []
         if enable_web_search and check_web_search_api_key():
             try:
@@ -135,6 +137,39 @@ def multi_turn_retrieval(initial_query, max_turns=3, enable_web_search=False, cl
                     web_search_contexts.append(filter_text)
             except Exception as e:
                 logging.error("Failed to execute web search: " + str(e))
+
+        # 2. semantic retrieval
+        # query embedding -> np.array
+        query_embedding = EMBEDDING_MODEL([query]) 
+        query_embedding_np = np.array(query_embedding).astype(np.float32)
+        semantic_retrieval_results = []
+        semantic_retrieval_metadata = []
+        semantic_retrieval_ids = []
+
+        if faiss_index is not None and hasattr(faiss_index, 'ntotal') and faiss_index.ntotal > 0:
+            try:
+                distances, indices = faiss_index.search(query_embedding_np, k=10)
+                for faiss_index_id in indices[0]:
+                    if faiss_index_id != -1 and faiss_index_id < len(map_index_to_doc_id):
+                        doc_id = map_index_to_doc_id[faiss_index_id]
+                        if doc_id in faiss_contents_map:
+                            semantic_retrieval_results.append(faiss_contents_map.get(doc_id, ""))
+                            semantic_retrieval_metadata.append(faiss_metadata_map.get(doc_id, {}))
+                            semantic_retrieval_ids.append(doc_id)
+                        else:
+                            logging.warning(f"Doc ID {doc_id} not found in contents map")
+            except Exception as e:
+                logging.error("Failed to execute semantic retrieval: " + str(e))
+        else:
+            logging.warning("FAISS index is empty or not initialized")
+
+        
+        # 3. BM25 retrieval
+        bm25_retrieval_results = BM25SearchEngine.search(query, top_k=10) if BM25SearchEngine.bm25_index else []
+
+        
+                
+
 
 
 def check_web_search_api_key():
@@ -189,3 +224,100 @@ def _parse_serpapi_results(data):
     return results
 
 
+STOPWORDS = {
+    '的', '了', '是', '在', '和', '与', '对', '为', '以', '及',
+    '也', '都', '但', '而', '或', '被', '把', '将', '从', '到',
+    '之', '其', '等', '中', '该', '此', '那', '这', '有', '无',
+}
+class BM25SearchEngine:
+    def __init__(self, stopwords: set = None):
+        self.bm25_index = None
+        self.doc_mapping: dict[int, str] = {}
+        self.tokenized_corpus: list[list[str]] = []
+        self.raw_corpus: list[str] = []
+        self.stopwords = stopwords if stopwords is not None else STOPWORDS
+    
+    def _tokenize(self, text) -> list[str]:
+        """Tokenize the given text, filtering out stopwords"""
+        return [token for token in jieba.cut(text) if token not in self.stopwords and len(token) > 1]
+    
+    def build_index(self, documents: list[str], doc_ids: list[str]) -> bool:
+        """
+        Build the BM25 index from the given documents
+        
+            Parameters:
+            - documents: a list of document texts to be indexed
+            - doc_ids: a list of document IDs corresponding to the documents
+        """
+        # 1. validate inputs
+        if not documents:
+            raise ValueError("No documents provided")
+        if len(documents) != len(doc_ids): 
+            raise ValueError("The number of documents and document IDs do not match")
+
+        self.raw_corpus = list(documents)
+        self.doc_mapping = {idx: doc_id for idx, doc_id in enumerate(doc_ids)}
+
+        # 2. tokenize documents
+        self.tokenized_corpus = [self._tokenize(doc) for doc in documents]
+
+        # 3. build BM25 index
+        self.bm25_index = BM25Okapi(self.tokenized_corpus)
+        return True
+        
+    
+    def search(self, query: str, top_k: int=10) -> list[dict]:
+        """
+        Search for the most relevant documents using BM25
+        
+            Parameters:
+            - query: the search query string
+            - top_k: the number of top results to return
+            
+            Returns:
+            - a list of dictionaries containing the document ID, 
+                title, and content of the top matching documents
+        """
+
+        # 1. validate inputs
+        if not self.bm25_index:
+            logging.warning("BM25 index is not built yet")
+            return []
+        if not query: 
+            logging.warning("No query provided")
+            return []
+        
+        # 2. 
+        top_k = max(1, min(top_k, len(self.raw_corpus)))
+        tokenized_query = self._tokenize(query)
+        if not tokenized_query: 
+            logging.warning("No query tokens found")
+            return []
+        scores = self.bm25_index.get_scores(tokenized_query)
+        top_indices = np.argsort(scores)[-top_k:][::-1]
+
+        results = []
+        for idx in top_indices:
+            doc_id = self.doc_mapping.get(idx, "")
+            if doc_id is None:
+                logging.warning(f"Document ID for index {idx} not found")
+                continue
+            if scores[idx] < 0.01: 
+                logging.info(f"Skipping document {doc_id} due to low score: {scores[idx]}")
+                continue
+            results.append({
+                "doc_id": doc_id,
+                "title": "",
+                "content": "",
+                "score": scores[idx]
+            })
+            logging.info(f"Added result: {results[-1]}")
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
+    
+    def clear(self) -> None:
+        """Clear the BM25 index and all associated data"""
+        self.bm25_index = None
+        self.doc_mapping.clear()
+        self.tokenized_corpus.clear()
+        self.raw_corpus.clear()
