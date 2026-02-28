@@ -48,7 +48,7 @@ class Chunk:
         return {
             "chunk_id": self.chunk_id,
             "doc_id": self.doc_id,
-            "content": self.content,
+            # "content": self.content, # store in faiss_contents_map
             "source": self.source,
             "file_type": self.file_type,
             "chunk_index": self.chunk_index,
@@ -240,7 +240,7 @@ class Chunker:
     def split(self, text: str) -> List[str]:
         if not text or not text.strip(): return []
         chunks = self._splitter.split_text(text)
-        return [chunk for chunk in chunks if chunk.strip() >= 10]
+        return [chunk for chunk in chunks if len(chunk.strip()) >= 10]
     
 
 class DocProcessor:
@@ -254,8 +254,17 @@ class DocProcessor:
 
     def __init__(self, chunk_size: int = 512, chunk_overlap: int = 128):
         self.extractor = TextExtractor()
-        self.leaner = TextCleaner()
+        self.cleaner = TextCleaner()
         self.chunker = Chunker(chunk_size, chunk_overlap)
+
+    @staticmethod
+    def _generate_doc_id(filepath: str) -> str:
+        with open(filepath, 'rb') as f:
+            content_hash = hashlib.md5(f.read()).hexdigest()[:12]
+        # Path.stem: trips the suffix
+        stem = Path(filepath).stem
+        return f"doc_{stem}_{content_hash}"
+        # example: "doc_report_d41d8cd98f00"
 
     def process(self, filepath: str, doc_id: Optional[str] = None,) -> List[Chunk]:
         """
@@ -271,7 +280,7 @@ class DocProcessor:
 
         # if doc_id is None, generate a unique id
         if doc_id is None:
-            doc_id = self.generate_doc_id()
+            doc_id = self._generate_doc_id(filepath)
 
         logger.info(f"Start processing the doc: {filename} (doc_id={doc_id})")
 
@@ -321,23 +330,39 @@ class DocProcessor:
         logger.info(f"Process completed: {filename} → {total} chunks")
         return chunks
     
-    def process_batch(self, filepaths: List[str], progress_callback=None) -> List[Chunk]:
+    def process_batch(self, 
+                      filepaths: List[str], 
+                      existing_doc_ids: Optional[set[str]] = None, 
+                      progress_callback=None
+    ) -> List[Chunk]:
         """
         Process multiple documents in a batch
+
+        Args:
+            filepaths: List[str]
+            existing_doc_ids: set[str] this
+            progress_callback: Callable[[int, int, str], None]
         
         Returns:
             List[Chunk]
         """
         all_chunks = []
         total_files = len(filepaths)
+        existing_doc_ids = existing_doc_ids or set()
 
         for i, filepath in enumerate(filepaths):
             filename = Path(filepath).name
 
+            # skip existing docs
+            doc_id = self._generate_doc_id(filepath)
+            if doc_id in existing_doc_ids:
+                logger.info(f"Doc ID {doc_id} already exists, skip: {filename}")
+                continue
+
             if progress_callback:
                 progress_callback(i, total_files, filename)
 
-            chunks = self.process(filepath)
+            chunks = self.process(filepath, doc_id)
             all_chunks.extend(chunks)
 
             logger.info(
@@ -350,11 +375,4 @@ class DocProcessor:
 
         return all_chunks
 
-    def _generate_doc_id(filepath: str) -> str:
-        with open(filepath, 'rb') as f:
-            content_hash = hashlib.md5(f.read()).hexdigest()[:12]
-        # Path.stem: trips the suffix
-        stem = Path(filepath).stem
-        return f"doc_{stem}_{content_hash}"
-        # example: "doc_report_d41d8cd98f00"
 
