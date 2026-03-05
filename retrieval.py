@@ -188,7 +188,12 @@ class HybridRetriever:
         self._reranker = reranker
         self._alpha = alpha
 
-    def search(self, query: str, k: int = 10, rerank_top_k: int = 5,) -> List[RetrievalResult]:
+    def search(self, query: str, 
+               k: int = 10, 
+               rerank_top_k: int = 5,
+               web_results: Optional[List[RetrievalResult]] = None,
+    ) -> List[RetrievalResult]:
+        
         """
         Retrieve the most relevant chunks for queries.
 
@@ -196,6 +201,7 @@ class HybridRetriever:
             1. Dense retrieval via VectorStore (FAISS)
             2. Sparse retrieval via BM25
             3. Score fusion
+            4. Optional web search
             4. Optional cross-encoder reranking
         """
         # 1. Dense retrieval
@@ -206,6 +212,21 @@ class HybridRetriever:
 
         # 3. Fuse scores
         merged = self._fuse(semantic_hits, bm25_hits)
+
+        # 4. Insert web results (optional)
+        if web_results:
+            weighted_web_results = []
+            for r in web_results:
+                weighted_web_results.append(RetrievalResult(
+                    chunk_id = r.chunk_id,
+                    content  = r.content,
+                    metadata = r.metadata,
+                    score    = r.score * 0.9,
+                    source   = r.source,
+                ))
+            merged = merged + weighted_web_results
+            # re-sort after inserting web results
+            merged.sort(key=lambda x: x.score, reverse=True)
 
         # 4. Rerank (optional)
         if self._reranker and merged:
