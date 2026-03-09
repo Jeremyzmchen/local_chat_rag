@@ -11,7 +11,7 @@ import time
 import re
 from pathlib import Path
 from io import StringIO
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from pdfminer.high_level import extract_text_to_fp
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import hashlib
@@ -330,49 +330,65 @@ class DocProcessor:
         logger.info(f"Process completed: {filename} → {total} chunks")
         return chunks
     
-    def process_batch(self, 
-                      filepaths: List[str], 
-                      existing_doc_ids: Optional[set] = None, 
-                      progress_callback=None
-    ) -> List[Chunk]:
+    def process_batch(self,
+                  filepaths: List[str],
+                  existing_chunk_ids: Optional[set] = None,   # chunk 级别去重（原来是 doc 级别）
+                  progress_callback=None
+    ) -> Tuple[List[Chunk], List[Tuple[str, str]]]:
         """
-        Process multiple documents in a batch
+        Process multiple documents in a batch, with chunk-level deduplication.
 
         Args:
-            filepaths: List[str]
-            existing_doc_ids: set[str] this
-            progress_callback: Callable[[int, int, str], None]
-        
+            filepaths:          List of file paths to process.
+            existing_chunk_ids: Set of chunk_ids already indexed.
+                                Chunks whose id is in this set are silently dropped.
+                                Pass None (or empty set) to skip deduplication.
+            progress_callback:  Optional callable(current, total, filename).
+
         Returns:
-            List[Chunk]
+            (new_chunks, errors)
+                new_chunks: List[Chunk]  — only chunks not in existing_chunk_ids
+                errors:     List[(filename, error_message)]
         """
-        all_chunks = []
-        total_files = len(filepaths)
-        existing_doc_ids = existing_doc_ids or set()
+        existing_chunk_ids = existing_chunk_ids or set()
+        all_new_chunks: List[Chunk] = []
+        errors: List[Tuple[str, str]] = []
+        total = len(filepaths)
 
         for i, filepath in enumerate(filepaths):
             filename = Path(filepath).name
 
-            # skip existing docs
-            doc_id = self._generate_doc_id(filepath)
-            if doc_id in existing_doc_ids:
-                logger.info(f"Doc ID {doc_id} already exists, skip: {filename}")
-                continue
-
             if progress_callback:
-                progress_callback(i, total_files, filename)
+                progress_callback(i, total, filename)
 
-            chunks = self.process(filepath, doc_id)
-            all_chunks.extend(chunks)
+            try:
+                chunks = self.process(str(filepath))
 
-            logger.info(
-                f"Batch progress: [{i+1}/{total_files}]: "
-                f"{filename} → {len(chunks)} chunks，total: {len(all_chunks)}"
-            )
+                # chunk-level deduplication
+                new_chunks = [c for c in chunks if c.chunk_id not in existing_chunk_ids]
+
+                if not new_chunks:
+                    logger.info(f"Skip (all chunks already indexed): {filename}")
+                    continue
+
+                all_new_chunks.extend(new_chunks)
+                logger.info(
+                    f"Batch [{i+1}/{total}]: {filename} → "
+                    f"{len(new_chunks)} new chunks "
+                    f"({len(chunks) - len(new_chunks)} skipped)"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to process [{filename}]: {e}")
+                errors.append((filename, str(e)))
 
         if progress_callback:
-            progress_callback(total_files, total_files, "Completed")
+            progress_callback(total, total, "Completed")
 
-        return all_chunks
+        logger.info(
+            f"process_batch done: {len(all_new_chunks)} new chunks, "
+            f"{len(errors)} errors"
+        )
+        return all_new_chunks, errors
 
 
