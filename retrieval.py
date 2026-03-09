@@ -40,8 +40,9 @@ class BM25Retriever:
         self._bm25: Optional[BM25Okapi] = None
         self._id_order: List[str] = []   # map to chunk_id
         self._contents: List[str] = []   
+        self._metadatas: List[dict] = []
 
-    def build(self, chunk_ids: List[str], contents: List[str]) -> None:
+    def build(self, chunk_ids: List[str], contents: List[str], metadatas: Optional[List[dict]] = None) -> None:
         """
         Build (or rebuild) the BM25 index.
 
@@ -55,6 +56,7 @@ class BM25Retriever:
 
         self._id_order = list(chunk_ids)
         self._contents = list(contents)
+        self._metadatas = list(metadatas) if metadatas else [{} for _ in chunk_ids]
         tokenized = [list(jieba.cut(doc)) for doc in contents]
         self._bm25 = BM25Okapi(tokenized)
         logger.info(f"BM25 index built with {len(chunk_ids)} documents")
@@ -89,7 +91,7 @@ class BM25Retriever:
             results.append(RetrievalResult(
                 chunk_id = self._id_order[idx],
                 content  = self._contents[idx],
-                metadata = {}, # BM25 has no metadata
+                metadata = self._metadatas[idx] if self._metadatas else {},
                 # normalise score to [0, 1]
                 score    = float(raw_scores[idx]) / max_score,
             ))
@@ -99,6 +101,7 @@ class BM25Retriever:
         self._bm25     = None
         self._id_order = []
         self._contents = []
+        self._metadatas = []
 
 
 
@@ -265,7 +268,7 @@ class HybridRetriever:
                 fused[hit.chunk_id]["score"] += (1 - self._alpha) * hit.score
             else:
                 # BM25-only hit: try to get metadata from VectorStore's internal store
-                meta = self._vs._store.get(hit.chunk_id, {}).get("metadata", {})
+                meta = self._vs.get_metadata(hit.chunk_id)
                 fused[hit.chunk_id] = {
                     "content":  hit.content,
                     "metadata": meta,
@@ -330,7 +333,9 @@ reply with exactly: NO_FURTHER_QUERY
         self._llm_fn = llm_fn
         self._max_iterations = max_iterations
 
-    def search(self, query: str, k: int = 5,) -> List[RetrievalResult]:
+    def search(self, query: str, k: int = 5, rerank_top_k = 5,
+               web_results: Optional[List[RetrievalResult]] = None
+    ) -> List[RetrievalResult]:
         """
         Iteratively retrieve until the LLM is satisfied or max_iterations is reached.
         """
@@ -341,7 +346,10 @@ reply with exactly: NO_FURTHER_QUERY
         for i in range(self._max_iterations):
             logger.info(f"RecursiveRetriever round {i+1}/{self._max_iterations}: '{current_query}'")
 
-            round_results = self._retriever.search(current_query, k=k)
+            round_results = self._retriever.search(current_query, 
+                                                   k=k, 
+                                                   rerank_top_k=rerank_top_k,
+                                                   web_results=web_results if i == 0 else None,)
 
             # deduplicate across rounds
             new_results = [r for r in round_results if r.chunk_id not in seen_ids]
@@ -385,10 +393,6 @@ reply with exactly: NO_FURTHER_QUERY
         except Exception as e:
             logger.error(f"RecursiveRetriever: LLM call failed: {e}")
             return None
-
-        # strip any <think>…</think> chain-of-thought artefacts
-        if "<think>" in response:
-            response = response.split("<think>")[0].strip()
 
         if not response or "NO_FURTHER_QUERY" in response:
             return None

@@ -121,7 +121,7 @@ class AutoFaissIndex:
         if self.index is None:
             raise ValueError("Index not built yet")
         self.index.add(vectors)
-        logger.info(f"FAISS index added: n={n}. Total vectors: {self.index.ntotal}")
+        logger.info(f"FAISS index added: n={len(vectors)}. Total vectors: {self.index.ntotal}")
 
     def search(self, query: np.ndarray, k: int = 5) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -277,24 +277,31 @@ class VectorStore:
                 continue
             results.append(SearchResult(
                 chunk_id = chunk_id,
-                chunk_content = chunk_info["content"],
+                content = chunk_info["content"],
                 metadata = chunk_info["metadata"],
                 score = float(dist),
             ))
         
         return results
     
+    def get_metadata(self, chunk_id: str) -> Dict[str, Any]:
+        """Return metadata for a given chunk_id, or empty dict if not found."""
+        entry = self._store.get(chunk_id)
+        if entry is None:
+            logger.warning(f"VectorStore.get_metadata: chunk_id '{chunk_id}' not found")
+            return {}
+        return entry.get("metadata", {})
+    
     def to_json(self):
         """
         Convert the Chunk object to a JSON string.
         """
-        return json.dumps(self.to_dict())
+        return json.dumps(self.get_info())
     
-    def clean(self):
+    def clear(self):
         self._store.clear()
         self._id_order.clear()
         self.faiss_index = AutoFaissIndex(self.embedder.dimension)
-        logger.info(f"Cleared {self.doc_id}")
 
     def get_info(self):
         return {

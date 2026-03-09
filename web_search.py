@@ -132,8 +132,8 @@ class WebRetriever:
     """
 
     def __init__(self, searcher: Optional[SerpAPISearcher] = None):
-        logger.info(f"WebRetriever: using searcher {self._searcher.engine}")
         self._searcher = searcher or SerpAPISearcher()
+        logger.info(f"WebRetriever: using searcher {self._searcher._engine}")
 
     @property
     def can_search(self) -> bool:
@@ -153,7 +153,7 @@ class WebRetriever:
             content = f"Title: {item.title}\nSnippet: {item.snippet}"
 
             # Rank-based score in (0, 1]: first result = 1.0, last ≈ 1/total
-            score = 1.0 - (rank / total)
+            score = 1.0 - (rank / max(total, 1))
 
             results.append(RetrievalResult(
                 chunk_id = f"web_{rank}_{hash(item.url) & 0xFFFFFF}",

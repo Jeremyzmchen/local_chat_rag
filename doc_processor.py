@@ -48,7 +48,7 @@ class Chunk:
         return {
             "chunk_id": self.chunk_id,
             "doc_id": self.doc_id,
-            # "content": self.content, # store in faiss_contents_map
+            "content": self.content,  # store in faiss_contents_map
             "source": self.source,
             "file_type": self.file_type,
             "chunk_index": self.chunk_index,
@@ -332,7 +332,7 @@ class DocProcessor:
     
     def process_batch(self, 
                       filepaths: List[str], 
-                      existing_doc_ids: Optional[set[str]] = None, 
+                      existing_doc_ids: Optional[set] = None, 
                       progress_callback=None
     ) -> List[Chunk]:
         """
