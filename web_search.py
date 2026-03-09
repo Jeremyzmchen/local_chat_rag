@@ -8,15 +8,11 @@ import logging
 import requests
 from dataclasses import dataclass
 from typing import List, Optional
-from dotenv import load_dotenv
 from pathlib import Path
 
 from retrieval import RetrievalResult
 
 logger = logging.getLogger(__name__)
-
-dotenv_path = Path(__file__).parent / "example.env"
-load_dotenv(dotenv_path)
 
 
 @dataclass
@@ -43,18 +39,21 @@ class SerpAPISearcher:
     def __init__(
         self,
         api_key:     Optional[str] = None,
-        engine:      str = "google",
-        num_results: int = 5,
-        timeout:     int = 15,
-        hl:          str = "en",
-        gl:          str = "us",
+        engine:      Optional[str] = None,
+        num_results: Optional[int] = None,
+        timeout:     Optional[int] = None,
+        hl:          Optional[str] = None,
+        gl:          Optional[str] = None,
     ):
-        self._api_key     = api_key or os.getenv("SERPAPI_KEY", "")
-        self._engine      = engine
-        self._num_results = num_results
-        self._timeout     = timeout
-        self._hl          = hl
-        self._gl          = gl
+        from config import cfg
+        w = cfg.web_search
+
+        self._api_key     = api_key     or cfg.secrets.serpapi_key or ""
+        self._engine      = engine      or w.engine
+        self._num_results = num_results or w.num_results
+        self._timeout     = timeout     or w.timeout
+        self._hl          = hl          or w.hl
+        self._gl          = gl          or w.gl
 
     @property
     def has_serpapi_key(self) -> bool:

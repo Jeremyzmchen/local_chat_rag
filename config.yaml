@@ -1,0 +1,46 @@
+llm:
+  backend: "ollama"           
+
+  ollama:
+    model: "llama3.2"
+    base_url: "http://localhost:11434"
+    timeout: 180
+
+  openai:
+    model: "gpt-4o-mini"
+    api_url: "https://api.openai.com/v1/chat/completions"
+    timeout: 120
+
+  temperature: 0.7
+  max_tokens: 1536
+
+retrieval:
+  chunk_size: 512
+  chunk_overlap: 128
+  alpha: 0.7                  # semantic weight in hybrid fusion (0~1)
+  retrieve_k: 10              
+  rerank_top_k: 5             
+  max_iterations: 3           
+  use_reranker: true
+  reranker_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+embedding:
+  model_name: "all-MiniLM-L6-v2"
+  batch_size: 64
+
+web_search:
+  enabled: false              
+  engine: "google"
+  num_results: 5
+  timeout: 15
+  hl: "en"
+  gl: "us"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "http://localhost:5173"
+    - "http://localhost:3000"
+
+env_file: ".env"

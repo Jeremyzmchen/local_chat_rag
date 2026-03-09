@@ -116,7 +116,9 @@ class CrossEncoderReranker:
     """
 
     def __init__(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",):
-        self._model_name = model_name
+        from config import cfg
+
+        self._model_name = model_name or cfg.retrieval.reranker_model
         self._model: Optional[CrossEncoder] = None
         self._lock  = threading.Lock()
 
@@ -184,12 +186,14 @@ class HybridRetriever:
         vector_store: VectorStore,
         bm25: BM25Retriever,
         reranker: Optional[CrossEncoderReranker] = None,
-        alpha: float = 0.7,
+        alpha: float = None,
     ):
+        from config import cfg   
+
         self._vs = vector_store
         self._bm25 = bm25
         self._reranker = reranker
-        self._alpha = alpha
+        self._alpha = alpha if alpha is not None else cfg.retrieval.alpha
 
     def search(self, query: str, 
                k: int = 10, 
@@ -328,10 +332,14 @@ reply with exactly: NO_FURTHER_QUERY
 (max 50 words, no explanation, respond in the same language as the original question).
 """
 
-    def __init__(self, hybrid_retriever, llm_fn = None, max_iterations = 3,):
+    def __init__(self, hybrid_retriever, 
+                 llm_fn = None, 
+                 max_iterations = None,):
+        from config import cfg
+
         self._retriever = hybrid_retriever
         self._llm_fn = llm_fn
-        self._max_iterations = max_iterations
+        self._max_iterations = max_iterations if max_iterations is not None else cfg.retrieval.max_iterations
 
     def search(self, query: str, k: int = 5, rerank_top_k = 5,
                web_results: Optional[List[RetrievalResult]] = None

@@ -9,15 +9,12 @@ from abc import ABC, abstractmethod
 from typing import Generator, Iterator, Optional
 
 import requests
-from dotenv import load_dotenv
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
-dotenv_path = Path(__file__).parent / "dev.env"
-load_dotenv(dotenv_path)
 
 
 def _build_session(total_retries: int = 3, backoff: float = 0.3) -> requests.Session:
@@ -251,24 +248,35 @@ class OpenAILLM(BaseLLM):
 
 
 
-def get_llm(backend: str = "ollama", **kwargs) -> BaseLLM:
-    """
-    Factory function — returns a configured LLM instance.
+def get_llm(backend: str = None, config=None, **kwargs) -> BaseLLM:
+    from config import cfg as _cfg
+    c = config or _cfg
+    backend = (backend or c.llm.backend).lower().strip()
 
-    Args:
-        backend: "openai" | "ollama"
-        **kwargs: forwarded to the LLM constructor
-
-    Usage:
-        llm = get_llm("openai")
-        llm = get_llm("ollama", model="llama3.2")
-    """
-    backend = backend.lower().strip()
+    if backend == "ollama":
+        oc = c.llm.ollama
+        params = dict(
+            model       = oc.model,
+            base_url    = oc.base_url,
+            timeout     = oc.timeout,
+            temperature = c.llm.temperature,
+            max_tokens  = c.llm.max_tokens,
+        )
+        params.update(kwargs)
+        return OllamaLLM(**params)
 
     if backend == "openai":
-        return OpenAILLM(**kwargs)
-    if backend == "ollama":
-        return OllamaLLM(**kwargs)
+        oc = c.llm.openai
+        params = dict(
+            model       = oc.model,
+            api_url     = oc.api_url,
+            timeout     = oc.timeout,
+            api_key     = c.secrets.openai_api_key,
+            temperature = c.llm.temperature,
+            max_tokens  = c.llm.max_tokens,
+        )
+        params.update(kwargs)
+        return OpenAILLM(**params)
 
     raise ValueError(
         f"Unknown backend '{backend}'. "

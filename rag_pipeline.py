@@ -28,6 +28,7 @@ from retrieval import (
     RetrievalResult,
 )
 from llm_factory import BaseLLM
+from config import cfg
 
 logger = logging.getLogger(__name__)
 
@@ -72,15 +73,24 @@ class RAGPipeline:
     def __init__(
         self,
         llm:            BaseLLM,
-        vector_store:   Optional[VectorStore]   = None,
-        doc_processor:  Optional[DocProcessor]  = None,
-        web_retriever:  Optional[WebRetriever]  = None,
-        use_reranker:   bool  = True,
-        alpha:          float = 0.7,
-        max_iterations: int   = 3,
-        retrieve_k:     int   = 10,
-        rerank_top_k:   int   = 5,
+        vector_store:   Optional[VectorStore]  = None,
+        doc_processor:  Optional[DocProcessor] = None,
+        web_retriever:  Optional[WebRetriever] = None,
+        use_reranker:   Optional[bool]  = None,
+        alpha:          Optional[float] = None,
+        max_iterations: Optional[int]   = None,
+        retrieve_k:     Optional[int]   = None,
+        rerank_top_k:   Optional[int]   = None,
     ):
+        from config import cfg        
+        r = cfg.retrieval                           
+
+        use_reranker   = use_reranker   if use_reranker   is not None else r.use_reranker
+        alpha          = alpha          if alpha          is not None else r.alpha
+        max_iterations = max_iterations if max_iterations is not None else r.max_iterations
+        retrieve_k     = retrieve_k     if retrieve_k     is not None else r.retrieve_k
+        rerank_top_k   = rerank_top_k   if rerank_top_k   is not None else r.rerank_top_k
+
         # core components
         self._llm           = llm
         self._vs            = vector_store or VectorStore()
@@ -88,9 +98,9 @@ class RAGPipeline:
         self._web_retriever = web_retriever
 
         # retrieval stack
-        self._bm25     = BM25Retriever()
-        reranker       = CrossEncoderReranker() if use_reranker else None
-        hybrid         = HybridRetriever(self._vs, self._bm25, reranker, alpha)
+        self._bm25      = BM25Retriever()
+        reranker        = CrossEncoderReranker() if use_reranker else None
+        hybrid          = HybridRetriever(self._vs, self._bm25, reranker, alpha)
         self._retriever = RecursiveRetriever(hybrid, self._llm, max_iterations)
 
         # tuning parameters

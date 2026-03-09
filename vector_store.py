@@ -190,9 +190,14 @@ class VectorStore:
 
     def __init__(
             self,
-            model_name: str = "all-MiniLM-L6-v2",
-            batch_size: int = 64,
+            model_name: str = None,
+            batch_size: int = None,
     ):
+        from config import cfg
+
+        model_name = model_name or cfg.embedding.model_name
+        batch_size = batch_size or cfg.embedding.batch_size
+        
         self.embedder = Embedding(model_name=model_name, batch_size=batch_size)
         self.faiss_index = AutoFaissIndex(self.embedder.dimension)
 
