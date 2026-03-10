@@ -252,10 +252,16 @@ class DocProcessor:
         - Text chunker
     """
 
-    def __init__(self, chunk_size: int = 512, chunk_overlap: int = 128):
+    def __init__(
+        self,
+        chunk_size:    int  = 512,
+        chunk_overlap: int  = 128,
+        chunker=None,                    # ← 新增：可注入自定义 chunker
+    ):
         self.extractor = TextExtractor()
         self.cleaner = TextCleaner()
-        self.chunker = Chunker(chunk_size, chunk_overlap)
+        self.chunker = chunker or Chunker(chunk_size, chunk_overlap)
+        self._use_custom_chunker = chunker is not None
 
     @staticmethod
     def _generate_doc_id(filepath: str) -> str:
@@ -305,26 +311,39 @@ class DocProcessor:
         logger.info(f"Clean completed: Length of raw_text: {len(raw_text)}  → After clean: {len(cleaned_text)} ")
 
         # ── Step 3: Chunk text ──
-        text_chunks = self.chunker.split(cleaned_text)
+        if self._use_custom_chunker:
+            legal_chunks = self.chunker.split(cleaned_text)
+            text_chunks  = [lc.content for lc in legal_chunks]
+            extra_metas  = [
+                {
+                    "chunk_type":  lc.chunk_type,
+                    "article_num": lc.article_num,
+                    "clause_num":  lc.clause_num,
+                }
+                for lc in legal_chunks
+            ]
+        else:
+            text_chunks = self.chunker.split(cleaned_text)
+            extra_metas = [{} for _ in text_chunks]
 
         if not text_chunks:
-            # For example: if pdf only has img or length of text is less than 10
-            logger.warning(f"Chunks are empty: {filename}")
             return []
 
         # ── Step 4: Encapsulate chunks ──
         total = len(text_chunks)
         chunks = []
-        for i, content in enumerate(text_chunks):
+        for i, (content, extra) in enumerate(zip(text_chunks, extra_metas)):
             chunk = Chunk(
-                chunk_id = f"{doc_id}_chunk_{i}",
-                doc_id = doc_id,
-                content = content,
-                source = filename,
-                file_type = file_type,
+                chunk_id    = f"{doc_id}_chunk_{i}",
+                doc_id      = doc_id,
+                content     = content,
+                source      = filename,
+                file_type   = file_type,
                 chunk_index = i,
                 total_chunks = total,
             )
+
+            chunk.__dict__.update(extra)
             chunks.append(chunk)
 
         logger.info(f"Process completed: {filename} → {total} chunks")

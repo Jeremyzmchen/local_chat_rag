@@ -187,6 +187,8 @@ class HybridRetriever:
         bm25: BM25Retriever,
         reranker: Optional[CrossEncoderReranker] = None,
         alpha: float = None,
+        knowledge_scorer   = None,
+        lambda_k: float = 0.5,
     ):
         from config import cfg   
 
@@ -194,11 +196,15 @@ class HybridRetriever:
         self._bm25 = bm25
         self._reranker = reranker
         self._alpha = alpha if alpha is not None else cfg.retrieval.alpha
+        self._knowledge_scorer = knowledge_scorer
+        self._lambda_k         = lambda_k
+
 
     def search(self, query: str, 
                k: int = 10, 
                rerank_top_k: int = 5,
                web_results: Optional[List[RetrievalResult]] = None,
+               key_info = None,
     ) -> List[RetrievalResult]:
         
         """
@@ -208,8 +214,9 @@ class HybridRetriever:
             1. Dense retrieval via VectorStore (FAISS)
             2. Sparse retrieval via BM25
             3. Score fusion
-            4. Optional web search
-            4. Optional cross-encoder reranking
+            4. knowledge-aware selection
+            5. Optional web search
+            6. Optional cross-encoder reranking
         """
         # 1. Dense retrieval
         semantic_hits: List[SearchResult] = self._vs.search(query, k=k)
@@ -220,28 +227,59 @@ class HybridRetriever:
         # 3. Fuse scores
         merged = self._fuse(semantic_hits, bm25_hits)
 
-        # 4. Insert web results (optional)
+        # 4. Apply knowledge-aware selection
+        if self._knowledge_scorer is not None and key_info is not None:
+            merged = self._apply_knowledge_scores(merged, key_info)
+
+        # 5. Insert web results (optional)
         if web_results:
-            weighted_web_results = []
-            for r in web_results:
-                weighted_web_results.append(RetrievalResult(
+            weighted_web = [
+                RetrievalResult(
                     chunk_id = r.chunk_id,
                     content  = r.content,
                     metadata = r.metadata,
                     score    = r.score * 0.9,
                     source   = r.source,
-                ))
-            merged = merged + weighted_web_results
-            # re-sort after inserting web results
-            merged.sort(key=lambda x: x.score, reverse=True)
+                )
+                for r in web_results
+            ]
+            merged = sorted(merged + weighted_web, key=lambda x: x.score, reverse=True)
 
-        # 4. Rerank (optional)
+        # 6. Rerank (optional)
         if self._reranker and merged:
             merged = self._reranker.rerank(query, merged, top_k=rerank_top_k)
         else:
             merged = merged[:rerank_top_k]
 
         return merged
+    
+    def _apply_knowledge_scores(
+        self,
+        results:  List[RetrievalResult],
+        key_info,                           # KeyInfo
+    ) -> List[RetrievalResult]:
+        """
+        对已融合的候选列表叠加知识级分数。
+
+        最终分数 = λ_k · Φ_K + (1 - λ_k) · Φ_S_BM25融合分
+        """
+        contents = [r.content for r in results]
+        k_scores = self._knowledge_scorer.score_chunks(key_info, contents)
+
+        updated = []
+        for r, ks in zip(results, k_scores):
+            new_score = self._lambda_k * ks + (1 - self._lambda_k) * r.score
+            updated.append(RetrievalResult(
+                chunk_id = r.chunk_id,
+                content  = r.content,
+                metadata = r.metadata,
+                score    = new_score,
+                source   = r.source,
+            ))
+
+        updated.sort(key=lambda x: x.score, reverse=True)
+        logger.info("HybridRetriever: knowledge-guided scores applied")
+        return updated
     
     def _fuse(
         self,
@@ -258,8 +296,8 @@ class HybridRetriever:
         fused: Dict[str, Dict] = {}
 
         # --- semantic side ---
-        for rank, hit in enumerate(semantic_hits):
-            sim = 1.0 / (1.0 + hit.score)  # a method transform distance to similarity
+        for hit in semantic_hits:
+            sim = 1.0 / (1.0 + hit.score)
             fused[hit.chunk_id] = {
                 "content":  hit.content,
                 "metadata": hit.metadata,

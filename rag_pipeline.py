@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Generator, List, Optional
 
 from doc_processor import DocProcessor, Chunk
+from legal_chunker import LegalSemanticChunker
 from vector_store import VectorStore
 from intent_analyze import IntentAnalyzer, SearchScope
 from web_search import WebRetriever
@@ -27,6 +28,13 @@ from retrieval import (
     RecursiveRetriever,
     RetrievalResult,
 )
+from legal_gkgr import (
+    LegalKeyInfoExtractor,
+    LegalKnowledgeScorer,
+    LegalReviewQueryGenerator,
+    ReviewQuery,
+)
+from legal_reviewer import ErrorAnalyzer, RevisionGenerator
 from llm_factory import BaseLLM
 from config import cfg
 
@@ -50,6 +58,26 @@ Guidelines:
 - Cite the source tag (e.g. [local: report.pdf] or [web: title]) at the end of each claim.
 {extra_instructions}
 Answer:"""
+
+_LEGAL_REVIEW_PROMPT = """\
+你是一名资深法律审查专家。请基于以下法律法规参考内容，对待审查文书进行专业审查。
+
+[法律法规参考]
+{context}
+
+[待审查文书]
+{document}
+
+[审查问题]
+{query}
+
+审查要求：
+- 严格基于参考内容进行分析，不得使用参考内容之外的知识。
+- 指出文书中存在的问题，并标注对应的参考依据（如 [参考: 文件名]）。
+- 若文书与参考内容一致无问题，明确说明"本条款符合规定"。
+- 提供具体的修改建议。
+
+审查结果："""
 
 _EXTRA_TIME_SENSITIVE  = "- Prioritise the most recent information."
 
@@ -81,37 +109,71 @@ class RAGPipeline:
         max_iterations: Optional[int]   = None,
         retrieve_k:     Optional[int]   = None,
         rerank_top_k:   Optional[int]   = None,
+        use_legal_chunker:  bool  = False,
+        legal_chunker_cfg:  Optional[dict] = None,
+        use_legal_review:   bool  = False,
+        lambda_k:           float = 0.5,
     ):
-        from config import cfg        
-        r = cfg.retrieval                           
-
-        use_reranker   = use_reranker   if use_reranker   is not None else r.use_reranker
-        alpha          = alpha          if alpha          is not None else r.alpha
-        max_iterations = max_iterations if max_iterations is not None else r.max_iterations
-        retrieve_k     = retrieve_k     if retrieve_k     is not None else r.retrieve_k
-        rerank_top_k   = rerank_top_k   if rerank_top_k   is not None else r.rerank_top_k
+        if doc_processor:
+            self._doc_processor = doc_processor
+        elif use_legal_chunker:
+            cfg = legal_chunker_cfg or {}
+            legal_chunker = LegalSemanticChunker(
+                embedding_model_name = cfg.get("embedding_model_name",
+                                               "paraphrase-multilingual-MiniLM-L12-v2"),
+                max_chunk_length     = cfg.get("max_chunk_length", 512),
+                min_chunk_length     = cfg.get("min_chunk_length", 30),
+            )
+            self._doc_processor = DocProcessor(chunker=legal_chunker)
+            logger.info("RAGPipeline: using LegalSemanticChunker")
+        else:
+            self._doc_processor = DocProcessor()
 
         # core components
         self._llm           = llm
         self._vs            = vector_store or VectorStore()
-        self._doc_processor = doc_processor or DocProcessor()
         self._web_retriever = web_retriever
 
-        # retrieval stack
-        self._bm25      = BM25Retriever()
-        reranker        = CrossEncoderReranker() if use_reranker else None
-        hybrid          = HybridRetriever(self._vs, self._bm25, reranker, alpha)
+        # gkgr
+        self._use_legal_review = use_legal_review
+        if use_legal_review:
+            self._key_extractor   = LegalKeyInfoExtractor(llm_fn=llm)
+            self._knowledge_scorer = LegalKnowledgeScorer()
+            self._query_generator  = LegalReviewQueryGenerator(llm_fn=llm)
+            self._error_analyzer   = ErrorAnalyzer(llm_fn=llm)  
+            self._revision_gen     = RevisionGenerator(llm_fn=llm)
+            logger.info("RAGPipeline: GKGR legal review mode enabled")
+        else:
+            self._key_extractor    = None
+            self._knowledge_scorer = None
+            self._query_generator  = None
+            self._error_analyzer   = None                    
+            self._revision_gen     = None
+
+        # retriever
+        self._bm25    = BM25Retriever()
+        reranker      = CrossEncoderReranker() if use_reranker else None
+        hybrid        = HybridRetriever(
+            vector_store     = self._vs,
+            bm25             = self._bm25,
+            reranker         = reranker,
+            alpha            = alpha,
+            knowledge_scorer = self._knowledge_scorer,  # 注入，None 时自动跳过
+            lambda_k         = lambda_k,
+        )
         self._retriever = RecursiveRetriever(hybrid, self._llm, max_iterations)
 
-        # tuning parameters
-        self._retrieve_k   = retrieve_k
-        self._rerank_top_k = rerank_top_k
+        # tuning params
+        self._k          = retrieve_k   or cfg.retrieval.retrieve_k
+        self._rerank_top_k = rerank_top_k or cfg.retrieval.rerank_top_k
 
         logger.info(
             f"RAGPipeline ready | "
             f"reranker={'on' if use_reranker else 'off'} | "
             f"web={'on' if web_retriever else 'off'} | "
-            f"alpha={alpha} | max_iter={max_iterations}"
+            f"legal_chunker={'on' if use_legal_chunker else 'off'} | "
+            f"legal_review={'on' if use_legal_review else 'off'} | "
+            f"alpha={alpha} | lambda_k={lambda_k}"
         )
     
     def add_documents(
@@ -193,26 +255,155 @@ class RAGPipeline:
         scope = self._analyze_intent(question)
         logger.info(f"Intent scope: {scope}")
 
-        # step 2: optional web search
+        # step 2: extract key info
+        key_info = None
+        if self._use_legal_review and self._key_extractor:
+            key_info = self._key_extractor.extract(question)
+            logger.info(f"KeyInfo extracted: max={key_info.max_terms}")
+
+        # step 3: optional web search
         web_results: List[RetrievalResult] = []
         if enable_web_search and self._web_retriever:
             web_results = self._web_retriever.search(question)
             logger.info(f"Web search: {len(web_results)} results")
 
-        # step 3: retrieval
+        # step 4: retrieval
         results = self._retriever.search(
             question,
-            retrieve_k   = self._retrieve_k,
+            retrieve_k   = self._k,
             rerank_top_k = self._rerank_top_k,
             web_results  = web_results or None,
+            key_info     = key_info,     
         )
         logger.info(f"Retrieved {len(results)} chunks for generation")
 
-        # step 4: build prompt
+        # step 5: build prompt
         prompt = self._build_prompt(question, results, enable_web_search)
 
-        # step 5: stream LLM response
         yield from self._llm.stream(prompt)
+
+    
+    def review_document(
+        self,
+        document_chunk:    str,
+        max_queries:       int  = 5,
+        enable_web_search: bool = False,
+    ) -> List[dict]:
+        if not self._use_legal_review:
+            raise RuntimeError(
+                "review_document() requires use_legal_review=True."
+            )
+        if self._vs.faiss_index.ntotal == 0 and not enable_web_search:
+            raise RuntimeError(
+                "Knowledge base is empty. Please add legal documents first."
+            )
+
+        review_queries = self._query_generator.generate(
+            document_chunk, max_queries=max_queries
+        )
+        logger.info(f"review_document: {len(review_queries)} review queries generated")
+
+        results = []
+        for rq in review_queries:
+            key_info    = self._key_extractor.extract(rq.query)
+            web_results = []
+            if enable_web_search and self._web_retriever:
+                web_results = self._web_retriever.search(rq.query)
+
+            retrieved = self._retriever.search(
+                rq.query,
+                k            = self._k,
+                rerank_top_k = self._rerank_top_k,
+                web_results  = web_results or None,
+                key_info     = key_info,
+            )
+            ref_contents = [r.content for r in retrieved]
+
+            # stage 1: deviation analysis
+            analysis = self._error_analyzer.analyze(
+                document_chunk   = document_chunk,
+                query            = rq.query,
+                dimension        = rq.dimension,
+                retrieved_chunks = ref_contents,
+            )
+
+            # stage 2: revision suggestions + confidence
+            revision = self._revision_gen.generate(
+                document_chunk  = document_chunk,
+                analysis_result = analysis,
+            )
+
+            results.append({
+                "query":      rq.query,
+                "dimension":  rq.dimension,
+                "priority":   rq.priority,
+                # stage 1 output
+                "analysis":       analysis.analysis,
+                "error_regions":  analysis.error_regions,
+                "references":     ref_contents,
+                # stage 2 output
+                "revision":    revision.revision_suggestions,
+                "confidence":  revision.confidence,
+            })
+            logger.info(
+                f"review_document: [{rq.dimension}] done, "
+                f"confidence={revision.confidence}"
+            )
+
+        return results
+
+    def stream_review_document(
+        self,
+        document_chunk:    str,
+        max_queries:       int  = 5,
+        enable_web_search: bool = False,
+    ) -> Generator[dict, None, None]:
+        if not self._use_legal_review:
+            raise RuntimeError(
+                "stream_review_document() requires use_legal_review=True."
+            )
+
+        review_queries = self._query_generator.generate(
+            document_chunk, max_queries=max_queries
+        )
+
+        for rq in review_queries:
+            key_info    = self._key_extractor.extract(rq.query)
+            web_results = []
+            if enable_web_search and self._web_retriever:
+                web_results = self._web_retriever.search(rq.query)
+
+            retrieved    = self._retriever.search(
+                rq.query,
+                k            = self._k,
+                rerank_top_k = self._rerank_top_k,
+                web_results  = web_results or None,
+                key_info     = key_info,
+            )
+            ref_contents = [r.content for r in retrieved]
+
+            analysis = self._error_analyzer.analyze(
+                document_chunk   = document_chunk,
+                query            = rq.query,
+                dimension        = rq.dimension,
+                retrieved_chunks = ref_contents,
+            )
+
+            revision = self._revision_gen.generate(
+                document_chunk  = document_chunk,
+                analysis_result = analysis,
+            )
+
+            yield {
+                "query":         rq.query,
+                "dimension":     rq.dimension,
+                "priority":      rq.priority,
+                "analysis":      analysis.analysis,
+                "error_regions": analysis.error_regions,
+                "references":    ref_contents,
+                "revision":      revision.revision_suggestions,
+                "confidence":    revision.confidence,
+            }
 
 
     def get_info(self) -> dict:
@@ -222,6 +413,7 @@ class RAGPipeline:
             "bm25_indexed":   len(self._bm25._id_order),
             "web_search":     self._web_retriever is not None,
             "llm":            type(self._llm).__name__,
+            "legal_review":   self._use_legal_review,
         }
 
     def list_documents(self) -> List[str]:
@@ -245,6 +437,7 @@ class RAGPipeline:
             return SearchScope()   # default global scope
         analyzer = IntentAnalyzer(all_files=doc_list, llm_fn=self._llm)
         return analyzer.analyze(question)
+
 
     def _build_prompt(
         self,

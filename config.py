@@ -143,7 +143,6 @@ def load_config(
     cfg.secrets = Secrets(
         serpapi_key     = os.getenv("SERPAPI_KEY"),
         openai_api_key  = os.getenv("OPENAI_API_KEY"),
-        siliconflow_key = os.getenv("SILICONFLOW_API_KEY"),
     )
 
     logger.info(
