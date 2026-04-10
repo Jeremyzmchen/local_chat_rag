@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>DocMind AI - Diff View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800;900&amp;family=Inter:wght@100;200;300;400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed": "#d8e2ff",
+                        "surface": "#131313",
+                        "outline-variant": "#424754",
+                        "surface-dim": "#131313",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#304671",
+                        "on-secondary": "#182f59",
+                        "secondary": "#b1c6f9",
+                        "surface-container-highest": "#353535",
+                        "on-tertiary-fixed-variant": "#723600",
+                        "surface-container-low": "#1c1b1b",
+                        "inverse-surface": "#e5e2e1",
+                        "on-tertiary-fixed": "#311400",
+                        "tertiary-fixed-dim": "#ffb786",
+                        "secondary-container": "#304671",
+                        "tertiary-container": "#df7412",
+                        "on-surface": "#e5e2e1",
+                        "outline": "#8c909f",
+                        "on-secondary-container": "#9fb5e7",
+                        "background": "#131313",
+                        "tertiary-fixed": "#ffdcc6",
+                        "on-primary-fixed": "#001a42",
+                        "surface-variant": "#353535",
+                        "on-secondary-fixed": "#001a42",
+                        "surface-container": "#20201f",
+                        "surface-bright": "#393939",
+                        "primary-fixed-dim": "#adc6ff",
+                        "on-primary-fixed-variant": "#004395",
+                        "primary-container": "#4d8eff",
+                        "primary": "#adc6ff",
+                        "surface-tint": "#adc6ff",
+                        "on-background": "#e5e2e1",
+                        "surface-container-high": "#2a2a2a",
+                        "inverse-on-surface": "#313030",
+                        "inverse-primary": "#005ac2",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-tertiary-container": "#461f00",
+                        "on-error": "#690005",
+                        "on-surface-variant": "#c2c6d6",
+                        "secondary-fixed": "#d8e2ff",
+                        "secondary-fixed-dim": "#b1c6f9",
+                        "error-container": "#93000a",
+                        "on-primary": "#002e6a",
+                        "error": "#ffb4ab",
+                        "tertiary": "#ffb786",
+                        "on-tertiary": "#502400",
+                        "on-primary-container": "#00285d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+        }
+        body {
+            background-color: #131313;
+            color: #e5e2e1;
+        }
+        .diff-line-number {
+            user-select: none;
+            text-align: right;
+            padding-right: 0.75rem;
+            width: 3rem;
+        }
+    </style>
+</head>
+<body class="font-body selection:bg-primary/30">
+<!-- SideNavBar (Rail) -->
+<aside class="w-16 h-screen fixed left-0 top-0 border-r-0 bg-zinc-900 flex flex-col items-center py-4 space-y-8 z-50">
+<div class="font-black text-blue-400 tracking-widest text-lg">DM</div>
+<nav class="flex flex-col items-center space-y-4 w-full">
+<button class="w-10 h-10 flex items-center justify-center transition-colors duration-150 ease-in-out text-zinc-500 hover:text-blue-300 hover:bg-zinc-800">
+<span class="material-symbols-outlined">dashboard</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center transition-colors duration-150 ease-in-out text-blue-400 border-l-2 border-blue-400 bg-blue-400/10">
+<span class="material-symbols-outlined">description</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center transition-colors duration-150 ease-in-out text-zinc-500 hover:text-blue-300 hover:bg-zinc-800">
+<span class="material-symbols-outlined">upload_file</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center transition-colors duration-150 ease-in-out text-zinc-500 hover:text-blue-300 hover:bg-zinc-800">
+<span class="material-symbols-outlined">analytics</span>
+</button>
+<div class="mt-auto pt-8 border-t border-zinc-800 w-8"></div>
+<button class="w-10 h-10 flex items-center justify-center transition-colors duration-150 ease-in-out text-zinc-500 hover:text-blue-300 hover:bg-zinc-800">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</nav>
+</aside>
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-40 h-14 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50 shadow-2xl shadow-black/50 flex justify-between items-center pl-20 pr-6">
+<div class="flex items-center space-x-4">
+<span class="font-['Space_Grotesk'] font-black text-blue-400 tracking-tighter text-xl">DocMind AI</span>
+<div class="h-4 w-[1px] bg-zinc-700"></div>
+<span class="font-mono text-xs text-zinc-500 tracking-widest">SESSION_ID: 0x882F</span>
+</div>
+<div class="flex items-center space-x-6">
+<div class="relative hidden md:block">
+<div class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-zinc-500 text-sm">search</span>
+</div>
+<input class="bg-zinc-900 border-none text-[10px] font-mono tracking-widest text-zinc-400 pl-10 pr-4 py-1.5 w-64 focus:ring-1 focus:ring-blue-400 rounded-none" placeholder="CMD+K TO SEARCH" type="text"/>
+</div>
+<div class="flex items-center space-x-4">
+<span class="material-symbols-outlined text-zinc-400 hover:text-blue-400 cursor-pointer text-xl">notifications</span>
+<span class="material-symbols-outlined text-zinc-400 hover:text-blue-400 cursor-pointer text-xl">terminal</span>
+<span class="material-symbols-outlined text-blue-400 cursor-pointer text-2xl">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pl-16 pt-14 min-h-screen bg-surface">
+<!-- Header Section -->
+<section class="p-6 bg-surface-container-low border-b border-outline-variant/10">
+<div class="flex items-center justify-between mb-2">
+<nav class="flex items-center space-x-2 text-[10px] font-mono text-zinc-500 tracking-tighter uppercase">
+<span class="hover:text-primary cursor-pointer">Documents</span>
+<span>/</span>
+<span class="hover:text-primary cursor-pointer">MSA_FINAL_2024.pdf</span>
+<span>/</span>
+<span class="text-primary-fixed">Diff_View</span>
+</nav>
+<div class="flex space-x-2">
+<button class="bg-surface-container-highest px-3 py-1 text-[10px] font-mono font-bold text-zinc-300 flex items-center gap-2 hover:bg-zinc-700 transition-colors">
+<span class="material-symbols-outlined text-sm">download</span> EXPORT RAW
+                    </button>
+<button class="bg-primary-container px-3 py-1 text-[10px] font-mono font-bold text-on-primary-container flex items-center gap-2 hover:brightness-110 transition-all shadow-[0_0_15px_rgba(77,142,255,0.3)]">
+<span class="material-symbols-outlined text-sm">check_circle</span> ACCEPT REVISION
+                    </button>
+</div>
+</div>
+<h1 class="font-headline text-2xl font-black text-on-surface tracking-tighter uppercase">Clause 14.2: Indemnification - Revision Suggestion</h1>
+<p class="font-mono text-[11px] text-zinc-400 mt-1">PROMPT: "Limit liability to gross negligence and include mutual indemnification for IP infringement."</p>
+</section>
+<!-- Layout Grid: Terminal Interface -->
+<div class="grid grid-cols-12 gap-0 min-h-[calc(100vh-140px)]">
+<!-- Side Metadata Rail (Left) -->
+<div class="col-span-1 border-r border-outline-variant/10 bg-surface-container flex flex-col items-center py-6 space-y-6">
+<div class="group relative cursor-help">
+<div class="w-8 h-8 rounded-full border border-tertiary/40 flex items-center justify-center text-tertiary font-mono text-xs">88</div>
+<div class="absolute left-10 top-0 w-32 bg-surface-container-highest p-2 text-[10px] font-mono opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none border border-outline-variant/20">RISK_SCORE: HIGH<br/>Critical exposure detected in original wording.</div>
+</div>
+<div class="h-[1px] w-4 bg-outline-variant/30"></div>
+<span class="material-symbols-outlined text-zinc-500 hover:text-primary cursor-pointer">history</span>
+<span class="material-symbols-outlined text-zinc-500 hover:text-primary cursor-pointer">comment</span>
+<span class="material-symbols-outlined text-zinc-500 hover:text-primary cursor-pointer">bookmark</span>
+</div>
+<!-- Diff Editor (Main Panel) -->
+<div class="col-span-11 bg-surface-container-lowest overflow-hidden flex flex-col">
+<!-- Diff Header Bar -->
+<div class="flex border-b border-outline-variant/10 bg-surface-container-low font-mono text-[10px] tracking-widest text-zinc-500">
+<div class="flex-1 px-4 py-2 border-r border-outline-variant/10 flex items-center justify-between">
+<span>ORIGINAL_SOURCE</span>
+<span class="text-error/70">-12 DELETIONS</span>
+</div>
+<div class="flex-1 px-4 py-2 flex items-center justify-between bg-primary/5">
+<span class="text-primary">AI_REVISION_v1.2</span>
+<span class="text-primary/70">+18 ADDITIONS</span>
+</div>
+</div>
+<!-- Content Area (Side-by-Side Diff) -->
+<div class="flex flex-1 font-mono text-[13px] leading-6 overflow-y-auto">
+<!-- Left: Original -->
+<div class="flex-1 border-r border-outline-variant/10 bg-surface-container-lowest/50">
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">142</span>
+<pre class="pl-2">14.2 <span class="text-zinc-400">Indemnification.</span></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">143</span>
+<pre class="pl-2">The Customer <span class="bg-error-container/30 text-error px-1">shall at all times</span></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">144</span>
+<pre class="pl-2">indemnify and hold harmless the</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">145</span>
+<pre class="pl-2">Provider <span class="bg-error-container/30 text-error px-1">against any and all claims,</span></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-error-container/10">
+<span class="diff-line-number text-error/40">-</span>
+<pre class="pl-2 text-error/80">losses, damages, liabilities,</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-error-container/10">
+<span class="diff-line-number text-error/40">-</span>
+<pre class="pl-2 text-error/80">costs and expenses arising from</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-error-container/10">
+<span class="diff-line-number text-error/40">-</span>
+<pre class="pl-2 text-error/80">any breach of this Agreement.</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">146</span>
+<pre class="pl-2"></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">147</span>
+<pre class="pl-2 text-zinc-500 font-italic">// No mutual IP clause detected</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">148</span>
+<pre class="pl-2"></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">149</span>
+<pre class="pl-2 text-zinc-500 font-italic">// End of Clause 14.2</pre>
+</div>
+</div>
+<!-- Right: AI Revision -->
+<div class="flex-1 bg-surface-container-lowest">
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">142</span>
+<pre class="pl-2">14.2 <span class="text-zinc-400">Indemnification (Mutual).</span></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">143</span>
+<pre class="pl-2">The Customer <span class="bg-primary-container/30 text-primary px-1">agrees to</span></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">144</span>
+<pre class="pl-2">indemnify and hold harmless the</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">145</span>
+<pre class="pl-2">Provider <span class="bg-primary-container/30 text-primary px-1">solely for Third-Party</span></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-primary-container/10">
+<span class="diff-line-number text-primary/40">+</span>
+<pre class="pl-2 text-primary/80">claims resulting directly from</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-primary-container/10">
+<span class="diff-line-number text-primary/40">+</span>
+<pre class="pl-2 text-primary/80">Customer's Gross Negligence or</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-primary-container/10">
+<span class="diff-line-number text-primary/40">+</span>
+<pre class="pl-2 text-primary/80">Willful Misconduct.</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors">
+<span class="diff-line-number text-zinc-600">146</span>
+<pre class="pl-2"></pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-primary-container/10">
+<span class="diff-line-number text-primary/40">+</span>
+<pre class="pl-2 text-primary/80">14.2.1 IP Indemnity: Provider</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-primary-container/10">
+<span class="diff-line-number text-primary/40">+</span>
+<pre class="pl-2 text-primary/80">shall indemnify Customer against</pre>
+</div>
+<div class="flex hover:bg-white/5 transition-colors bg-primary-container/10">
+<span class="diff-line-number text-primary/40">+</span>
+<pre class="pl-2 text-primary/80">IP infringement claims.</pre>
+</div>
+</div>
+</div>
+<!-- Footer Status Bar -->
+<div class="h-8 bg-zinc-900 border-t border-outline-variant/10 flex items-center px-4 justify-between font-mono text-[9px] text-zinc-500 uppercase tracking-widest">
+<div class="flex items-center space-x-4">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span> AI_LIVE_ENGINE_READY</span>
+<span>UTF-8</span>
+<span>LINE: 145</span>
+</div>
+<div class="flex items-center space-x-4">
+<span>DIFF_MODE: SIDE_BY_SIDE</span>
+<span class="text-primary">GIT_HEAD: 9c3f10</span>
+</div>
+</div>
+</div>
+<!-- Context Inspector Panel (Right) -->
+<div class="fixed right-0 top-14 w-80 h-[calc(100vh-56px)] bg-surface-container border-l border-outline-variant/10 p-4 hidden xl:block">
+<h3 class="font-headline text-xs font-bold text-zinc-400 mb-4 tracking-wider uppercase">AI Analysis Log</h3>
+<div class="space-y-4">
+<div class="p-3 bg-surface-container-low rounded border border-outline-variant/20">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-primary text-sm">auto_awesome</span>
+<span class="font-mono text-[10px] font-bold text-on-surface">REASONING_ENGINE</span>
+</div>
+<p class="font-mono text-[11px] text-zinc-400 leading-relaxed">
+                            Original clause lacked reciprocal protections. AI suggested adding 14.2.1 to balance Intellectual Property risk based on industry standard 'Cloud-First' MSA frameworks.
+                        </p>
+</div>
+<div class="p-3 bg-surface-container-low rounded border border-outline-variant/20">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-tertiary text-sm">warning</span>
+<span class="font-mono text-[10px] font-bold text-tertiary">LEGAL_RISK_FOUND</span>
+</div>
+<p class="font-mono text-[11px] text-zinc-400 leading-relaxed">
+                            "Against any and all claims" is overly broad and creates uncapped liability for minor administrative breaches.
+                        </p>
+</div>
+</div>
+<div class="mt-8">
+<h3 class="font-headline text-xs font-bold text-zinc-400 mb-3 tracking-wider uppercase">Contextual Entities</h3>
+<div class="flex flex-wrap gap-2">
+<span class="bg-secondary-container px-2 py-1 text-[9px] font-mono text-on-secondary-container rounded">PROVIDER_CORP</span>
+<span class="bg-secondary-container px-2 py-1 text-[9px] font-mono text-on-secondary-container rounded">CLI_ID_4420</span>
+<span class="bg-secondary-container px-2 py-1 text-[9px] font-mono text-on-secondary-container rounded">JURIS_DELAWARE</span>
+</div>
+</div>
+<div class="absolute bottom-6 left-4 right-4">
+<div class="relative">
+<textarea class="w-full bg-surface-container-lowest border border-outline-variant/30 font-mono text-[11px] p-3 text-zinc-300 focus:ring-1 focus:ring-primary focus:border-primary rounded-none h-24 placeholder:text-zinc-600" placeholder="ASK AI FOR FURTHER REFINEMENT..."></textarea>
+<button class="absolute bottom-2 right-2 text-primary hover:text-white transition-colors">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual Info Bubble (Floating) -->
+<div class="fixed bottom-6 right-6 flex flex-col items-end space-y-2 pointer-events-none">
+<div class="bg-surface-container-highest/80 backdrop-blur-xl p-4 rounded-xl border border-outline-variant/20 shadow-2xl max-w-xs pointer-events-auto">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">psychology</span>
+</div>
+<div>
+<div class="font-headline text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Confidence Score</div>
+<div class="font-mono text-lg font-black text-on-surface">94.2%</div>
+</div>
+</div>
+<div class="w-full bg-zinc-800 h-1 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[94%] shadow-[0_0_8px_#adc6ff]"></div>
+</div>
+</div>
+</div>
+</body></html>

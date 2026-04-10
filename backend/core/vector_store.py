@@ -303,6 +303,48 @@ class VectorStore:
         """
         return json.dumps(self.get_info())
     
+    def delete(self, chunk_ids: List[str]) -> int:
+        """
+        Remove chunks by ID and rebuild the FAISS index without them.
+
+        FAISS FlatL2 does not support in-place deletion, so we rebuild
+        the index from the remaining vectors.
+
+        Args:
+            chunk_ids: List of chunk_id strings to remove.
+
+        Returns:
+            Number of chunks actually removed.
+        """
+        to_remove = set(chunk_ids) & set(self._store.keys())
+        if not to_remove:
+            logger.warning("delete: none of the requested chunk_ids exist in the store")
+            return 0
+
+        # Keep only surviving chunks, preserving insertion order
+        surviving_ids = [cid for cid in self._id_order if cid not in to_remove]
+
+        # Remove from store dict
+        for cid in to_remove:
+            del self._store[cid]
+        self._id_order = surviving_ids
+
+        # Rebuild FAISS from surviving chunks
+        self.faiss_index = AutoFaissIndex(self.embedder.dimension)
+        if surviving_ids:
+            texts   = [self._store[cid]["content"] for cid in surviving_ids]
+            vectors = self.embedder.encode(texts)
+            self.faiss_index.build(vectors)
+            # Rewrite faiss_pos to match new index positions
+            for new_pos, cid in enumerate(surviving_ids):
+                self._store[cid]["faiss_pos"] = new_pos
+
+        logger.info(
+            f"Deleted {len(to_remove)} chunks. "
+            f"Remaining: {len(surviving_ids)}"
+        )
+        return len(to_remove)
+
     def clear(self):
         self._store.clear()
         self._id_order.clear()

@@ -1,0 +1,20 @@
+# DocMind AI — Server dependencies
+# Install with: pip install -r requirements_server.txt
+
+# Web framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9      # required for File/Form uploads
+
+# Existing RAG stack (already installed)
+# sentence-transformers
+# faiss-cpu
+# rank-bm25
+# pdfminer.six
+# python-docx
+# openpyxl
+# python-pptx
+# requests
+# pyyaml
+# python-dotenv
+# langchain-text-splitters
