@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+@import "tailwindcss";
+
+@theme {
+  /* ── Colors ── */
+  --color-surface:                   #131313;
+  --color-surface-dim:               #131313;
+  --color-surface-bright:            #393939;
+  --color-surface-container-lowest:  #0e0e0e;
+  --color-surface-container-low:     #1c1b1b;
+  --color-surface-container:         #20201f;
+  --color-surface-container-high:    #2a2a2a;
+  --color-surface-container-highest: #353535;
+  --color-surface-variant:           #353535;
+  --color-surface-tint:              #adc6ff;
+
+  --color-on-surface:                #e5e2e1;
+  --color-on-surface-variant:        #c2c6d6;
+  --color-on-background:             #e5e2e1;
+  --color-background:                #131313;
+
+  --color-primary:                   #adc6ff;
+  --color-primary-container:         #4d8eff;
+  --color-primary-fixed:             #d8e2ff;
+  --color-primary-fixed-dim:         #adc6ff;
+  --color-on-primary:                #002e6a;
+  --color-on-primary-container:      #00285d;
+  --color-on-primary-fixed:          #001a42;
+  --color-on-primary-fixed-variant:  #004395;
+  --color-inverse-primary:           #005ac2;
+
+  --color-secondary:                 #b1c6f9;
+  --color-secondary-container:       #304671;
+  --color-secondary-fixed:           #d8e2ff;
+  --color-secondary-fixed-dim:       #b1c6f9;
+  --color-on-secondary:              #182f59;
+  --color-on-secondary-container:    #9fb5e7;
+  --color-on-secondary-fixed:        #001a42;
+  --color-on-secondary-fixed-variant:#304671;
+
+  --color-tertiary:                  #ffb786;
+  --color-tertiary-container:        #df7412;
+  --color-tertiary-fixed:            #ffdcc6;
+  --color-tertiary-fixed-dim:        #ffb786;
+  --color-on-tertiary:               #502400;
+  --color-on-tertiary-container:     #461f00;
+  --color-on-tertiary-fixed:         #311400;
+  --color-on-tertiary-fixed-variant: #723600;
+
+  --color-error:                     #ffb4ab;
+  --color-error-container:           #93000a;
+  --color-on-error:                  #690005;
+  --color-on-error-container:        #ffdad6;
+
+  --color-outline:                   #8c909f;
+  --color-outline-variant:           #424754;
+  --color-inverse-surface:           #e5e2e1;
+  --color-inverse-on-surface:        #313030;
+
+  /* ── Border Radius ── */
+  --radius:      0.125rem;
+  --radius-lg:   0.25rem;
+  --radius-xl:   0.5rem;
+  --radius-full: 0.75rem;
+
+  /* ── Font Families ── */
+  --font-headline: "Space Grotesk", sans-serif;
+  --font-body:     "Inter", sans-serif;
+  --font-label:    "Inter", sans-serif;
+  --font-mono:     "JetBrains Mono", monospace;
+}
+
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: #131313;
+  color: #e5e2e1;
+  font-family: "Inter", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Material Symbols ── */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  display: inline-block;
+  line-height: 1;
+  font-style: normal;
+  font-size: 24px;
+  user-select: none;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar            { width: 4px; height: 4px; }
+::-webkit-scrollbar-track      { background: #0e0e0e; }
+::-webkit-scrollbar-thumb      { background: #353535; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover{ background: #424754; }
+
+/* ── Selection ── */
+::selection {
+  background-color: rgba(77, 142, 255, 0.3);
+  color: #e5e2e1;
+}
+
+/* ── Utilities ── */
+.phosphor-glow {
+  text-shadow: 0 0 8px rgba(173, 198, 255, 0.5);
+}
+
+.font-mono-data {
+  font-family: "JetBrains Mono", monospace;
+}
