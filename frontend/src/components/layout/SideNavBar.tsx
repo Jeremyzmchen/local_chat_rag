@@ -11,30 +11,30 @@ const NAV_ITEMS: NavItem[] = [
   { icon: 'description', path: '/documents', label: 'Docs'   },
   { icon: 'upload_file', path: '/upload',    label: 'Upload' },
   { icon: 'analytics',   path: '/report',    label: 'Report' },
-  { icon: 'settings',    path: '/settings',  label: 'Set'    },
 ]
 
-export default function SideNavBar() {
-  const navigate  = useNavigate()
-  const { pathname } = useLocation()
+interface Props {
+  onSettingsClick: () => void
+}
+
+export default function SideNavBar({ onSettingsClick }: Props) {
+  const navigate      = useNavigate()
+  const { pathname }  = useLocation()
 
   const isActive = (path: string) =>
     path === '/' ? pathname === '/' : pathname.startsWith(path)
 
   return (
-    <nav className="fixed left-0 top-0 w-16 h-screen bg-zinc-900 flex flex-col items-center py-4 z-60">
+    <nav className="fixed left-0 top-0 w-16 h-screen bg-zinc-900 flex flex-col items-center py-4 z-[60]">
       {/* Logo */}
       <div className="mb-6">
-        <span
-          className="material-symbols-outlined phosphor-glow"
-          style={{ color: '#adc6ff', fontSize: 28 }}
-        >
+        <span className="material-symbols-outlined phosphor-glow" style={{ color: '#adc6ff', fontSize: 28 }}>
           terminal
         </span>
       </div>
 
       {/* Nav items */}
-      <div className="flex flex-col items-center w-full gap-1">
+      <div className="flex flex-col items-center w-full gap-1 flex-1">
         {NAV_ITEMS.map(({ icon, path, label }) => {
           const active = isActive(path)
           return (
@@ -48,16 +48,21 @@ export default function SideNavBar() {
                   : 'text-zinc-500 hover:text-[#adc6ff] hover:bg-zinc-800',
               ].join(' ')}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 22 }}>
-                {icon}
-              </span>
-              <span className="font-mono text-[8px] uppercase tracking-tighter mt-1">
-                {label}
-              </span>
+              <span className="material-symbols-outlined" style={{ fontSize: 22 }}>{icon}</span>
+              <span className="font-mono text-[8px] uppercase tracking-tighter mt-1">{label}</span>
             </button>
           )
         })}
       </div>
+
+      {/* Settings at bottom */}
+      <button
+        onClick={onSettingsClick}
+        className="flex flex-col items-center py-3 w-full text-zinc-500 hover:text-[#adc6ff] hover:bg-zinc-800 transition-colors duration-150"
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 22 }}>settings</span>
+        <span className="font-mono text-[8px] uppercase tracking-tighter mt-1">Set</span>
+      </button>
     </nav>
   )
 }

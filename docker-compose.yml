@@ -1,0 +1,39 @@
+services:
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: docmind-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist FAISS index and uploaded data between restarts
+      - docmind-data:/app/data
+      # Mount your .env with secrets (SERPAPI_KEY, OPENAI_API_KEY)
+      - ./backend/core/dev.env:/app/core/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - docmind-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: docmind-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - docmind-net
+    restart: unless-stopped
+
+volumes:
+  docmind-data:
+
+networks:
+  docmind-net:
+    driver: bridge
