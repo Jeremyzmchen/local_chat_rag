@@ -111,7 +111,7 @@ async def upload_documents(
                 filename        = entry["filename"],
                 file_type       = entry.get("file_type", ""),
                 total_chunks    = meta.get("total_chunks", 0),
-                char_count      = info.get("content", "") and len(info["content"]),
+                char_count      = len(info.get("content", "")),
                 created_at      = entry["created_at"],
                 state           = ProcessState.completed,
                 risk_score      = entry.get("risk_score"),

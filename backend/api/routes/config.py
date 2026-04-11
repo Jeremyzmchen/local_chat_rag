@@ -158,10 +158,7 @@ def patch_config(
             )
 
     if body.use_legal_review is not None:
-        # Toggling legal review requires rebuilding the pipeline — warn user
-        logger.warning(
-            "use_legal_review change requested via PATCH /config. "
-            "This requires a server restart to take full effect."
-        )
+        pipeline._use_legal_review = body.use_legal_review
+        logger.info(f"Legal review toggled: {body.use_legal_review}")
 
     return get_config(app_state)
