@@ -186,7 +186,8 @@ class RAGPipeline:
 
         Args:
             filepaths:         List of absolute or relative file paths.
-            progress_callback: Optional callable(current, total, filename) for UI progress.
+            progress_callback: Optional callable(current, total, filename, stage)
+                               stage is one of: "extract" | "index" | "done"
 
         Returns:
             {
@@ -197,26 +198,36 @@ class RAGPipeline:
             }
         """
         existing_chunk_ids = set(self._vs._store.keys())
+        total_files = len(filepaths)
+
+        # Wrap callback to inject stage="extract"
+        def extract_cb(current, total, filename):
+            if progress_callback:
+                progress_callback(current, total, filename, "extract")
 
         # DocProcessor handles the loop, progress, and chunk-level dedup
         new_chunks, errors = self._doc_processor.process_batch(
             filepaths,
             existing_chunk_ids = existing_chunk_ids,
-            progress_callback  = progress_callback,
+            progress_callback  = extract_cb,
         )
 
         # Count skipped files: files where all chunks already existed
-        total_files    = len(filepaths)
-        added_files    = len({c.doc_id for c in new_chunks})
-        skipped_files  = total_files - added_files - len(errors)
+        added_files   = len({c.doc_id for c in new_chunks})
+        skipped_files = total_files - added_files - len(errors)
 
         # Add new chunks to the vector store
         if new_chunks:
+            if progress_callback:
+                progress_callback(0, 1, f"Embedding {len(new_chunks)} chunks…", "index")
             added = self._vs.add(new_chunks)
             self._rebuild_bm25()
             logger.info(f"Indexed {added} new chunks. Store total: {len(self._vs._store)}")
         else:
             added = 0
+
+        if progress_callback:
+            progress_callback(total_files, total_files, "Completed", "done")
 
         return {
             "added_files":   added_files,

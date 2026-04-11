@@ -66,8 +66,16 @@ export default function Upload() {
     push(`[→] Ingesting ${files.length} file(s) with protocol: ${protocol}`)
 
     try {
-      push('[→] Uploading files to server...')
-      const res = await api.uploadDocuments(files, protocol)
+      const res = await api.uploadDocuments(files, protocol, event => {
+        if (event.type === 'progress') {
+          if (event.stage === 'extract') {
+            push(`[→] Extracting: ${event.filename} (${event.current + 1}/${event.total})`)
+          } else if (event.stage === 'index') {
+            push(`[→] ${event.filename}`)
+          }
+        }
+      })
+
       push(`[✓] Chunking complete — ${res.total_chunks} segments`)
       push(`[✓] Indexed ${res.added_files} file(s), skipped ${res.skipped_files}`)
 

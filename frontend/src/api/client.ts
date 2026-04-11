@@ -83,6 +83,11 @@ export type SSEEvent =
   | { type: 'error';        message: string }
   | { type: 'review_chunk'; finding: ReviewFinding }
 
+export type UploadSSEEvent =
+  | { type: 'progress'; stage: 'extract' | 'index' | 'done'; current: number; total: number; filename: string }
+  | { type: 'done';     result: UploadResponse }
+  | { type: 'error';    detail: string }
+
 /**
  * Open an SSE stream via fetch + ReadableStream.
  * Calls onEvent for each parsed SSE message, onDone when stream closes.
@@ -173,14 +178,43 @@ export const api = {
   uploadDocuments: (
     files:    File[],
     protocol: string = 'compliance',
+    onEvent?: (e: UploadSSEEvent) => void,
+    signal?:  AbortSignal,
   ): Promise<UploadResponse> => {
     const form = new FormData()
     files.forEach(f => form.append('files', f))
     form.append('protocol', protocol)
-    return fetch(`${BASE}/documents/upload`, { method: 'POST', body: form })
-      .then(r => {
+
+    return fetch(`${BASE}/documents/upload`, { method: 'POST', body: form, signal })
+      .then(async r => {
         if (!r.ok) return r.text().then(t => Promise.reject(new Error(t)))
-        return r.json()
+
+        const reader  = r.body!.getReader()
+        const decoder = new TextDecoder()
+        let   buffer  = ''
+
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const raw = line.slice(6).trim()
+            if (!raw) continue
+            try {
+              const event = JSON.parse(raw) as UploadSSEEvent
+              onEvent?.(event)
+              if (event.type === 'done') return event.result
+              if (event.type === 'error') throw new Error(event.detail)
+            } catch (e) {
+              if (e instanceof SyntaxError) continue
+              throw e
+            }
+          }
+        }
+        throw new Error('Upload stream ended without a done event')
       })
   },
 

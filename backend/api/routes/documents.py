@@ -14,8 +14,10 @@ import time
 from pathlib import Path
 from typing import List
 
+import json
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.models import (
     DeleteResponse,
@@ -45,7 +47,7 @@ def _validate_file(file: UploadFile) -> None:
         )
 
 
-@router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", status_code=status.HTTP_200_OK)
 async def upload_documents(
     files:    List[UploadFile]    = File(...),
     protocol: ReviewProtocol      = Form(ReviewProtocol.compliance),
@@ -53,8 +55,12 @@ async def upload_documents(
     registry: dict                = Depends(get_upload_registry),
 ):
     """
-    Upload one or more documents and index them into the knowledge base.
-    Supports: PDF, DOCX, TXT, MD, XLSX, PPTX (max 50 MB each).
+    Upload one or more documents and stream indexing progress via SSE.
+
+    SSE event types:
+      {"type": "progress", "stage": "extract"|"index", "current": int, "total": int, "filename": str}
+      {"type": "done",     "result": UploadResponse}
+      {"type": "error",    "detail": str}
     """
     for f in files:
         _validate_file(f)
@@ -62,72 +68,131 @@ async def upload_documents(
     tmp_dir   = tempfile.mkdtemp(prefix="docmind_")
     tmp_paths: List[str] = []
 
-    try:
-        # Save uploads to temp dir
-        for upload in files:
-            dest = os.path.join(tmp_dir, upload.filename)
-            content = await upload.read()
+    # Read all files into temp dir before streaming (must be done before generator starts)
+    for upload in files:
+        content = await upload.read()
+        if len(content) > _MAX_FILE_SIZE_MB * 1024 * 1024:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"'{upload.filename}' exceeds {_MAX_FILE_SIZE_MB} MB limit.",
+            )
+        dest = os.path.join(tmp_dir, upload.filename)
+        with open(dest, "wb") as fh:
+            fh.write(content)
+        tmp_paths.append(dest)
 
-            if len(content) > _MAX_FILE_SIZE_MB * 1024 * 1024:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"'{upload.filename}' exceeds {_MAX_FILE_SIZE_MB} MB limit.",
-                )
+    def _sse(event: dict) -> str:
+        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-            with open(dest, "wb") as fh:
-                fh.write(content)
-            tmp_paths.append(dest)
+    def generate():
+        try:
+            def progress_callback(current, total, filename, stage):
+                yield_val = _sse({
+                    "type":     "progress",
+                    "stage":    stage,
+                    "current":  current,
+                    "total":    total,
+                    "filename": filename,
+                })
+                # store in nonlocal list so the generator can yield it
+                _events.append(yield_val)
 
-        # Index (blocking — acceptable for Phase 1; Phase 4 adds background tasks)
-        result = pipeline.add_documents(tmp_paths)
+            _events: List[str] = []
 
-        # Build document info list from what was just indexed
-        doc_infos: List[DocumentInfo] = []
-        vs_store = pipeline._vs._store
-        seen_docs: set = set()
+            # We can't yield directly from a callback, so we use a polling approach:
+            # run add_documents in a thread and drain _events between polls.
+            import threading
+            result_holder: List[dict] = []
+            exc_holder:    List[Exception] = []
 
-        for chunk_id, info in vs_store.items():
-            meta  = info.get("metadata", {})
-            source = meta.get("source", "unknown")
-            doc_id = meta.get("doc_id", source)
+            def run():
+                try:
+                    result_holder.append(
+                        pipeline.add_documents(tmp_paths, progress_callback=progress_callback)
+                    )
+                except Exception as e:
+                    exc_holder.append(e)
 
-            if doc_id in seen_docs:
-                continue
-            seen_docs.add(doc_id)
+            thread = threading.Thread(target=run, daemon=True)
+            thread.start()
 
-            # Record in upload registry for future reference
-            if doc_id not in registry:
-                registry[doc_id] = {
-                    "filename": source,
-                    "file_type": meta.get("file_type", ""),
-                    "review_protocol": protocol,
-                    "created_at": time.time(),
-                    "risk_score": None,
-                }
+            while thread.is_alive():
+                while _events:
+                    yield _events.pop(0)
+                thread.join(timeout=0.1)
 
-            entry = registry[doc_id]
-            doc_infos.append(DocumentInfo(
-                doc_id          = doc_id,
-                filename        = entry["filename"],
-                file_type       = entry.get("file_type", ""),
-                total_chunks    = meta.get("total_chunks", 0),
-                char_count      = len(info.get("content", "")),
-                created_at      = entry["created_at"],
-                state           = ProcessState.completed,
-                risk_score      = entry.get("risk_score"),
-                review_protocol = entry.get("review_protocol"),
-            ))
+            # drain any remaining events
+            while _events:
+                yield _events.pop(0)
 
-        return UploadResponse(
-            added_files   = result["added_files"],
-            skipped_files = result["skipped_files"],
-            total_chunks  = result["total_chunks"],
-            errors        = result["errors"],
-            documents     = doc_infos,
-        )
+            if exc_holder:
+                yield _sse({"type": "error", "detail": str(exc_holder[0])})
+                return
 
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+            result = result_holder[0]
+
+            # Build document info list
+            doc_infos: List[dict] = []
+            vs_store  = pipeline._vs._store
+            seen_docs: set = set()
+
+            for chunk_id, info in vs_store.items():
+                meta   = info.get("metadata", {})
+                source = meta.get("source", "unknown")
+                doc_id = meta.get("doc_id", source)
+
+                if doc_id in seen_docs:
+                    continue
+                seen_docs.add(doc_id)
+
+                if doc_id not in registry:
+                    registry[doc_id] = {
+                        "filename":        source,
+                        "file_type":       meta.get("file_type", ""),
+                        "review_protocol": protocol,
+                        "created_at":      time.time(),
+                        "risk_score":      None,
+                    }
+
+                entry = registry[doc_id]
+                doc_infos.append({
+                    "doc_id":          doc_id,
+                    "filename":        entry["filename"],
+                    "file_type":       entry.get("file_type", ""),
+                    "total_chunks":    meta.get("total_chunks", 0),
+                    "char_count":      len(info.get("content", "")),
+                    "created_at":      entry["created_at"],
+                    "state":           ProcessState.completed,
+                    "risk_score":      entry.get("risk_score"),
+                    "review_protocol": entry.get("review_protocol"),
+                })
+
+            yield _sse({
+                "type": "done",
+                "result": {
+                    "added_files":   result["added_files"],
+                    "skipped_files": result["skipped_files"],
+                    "total_chunks":  result["total_chunks"],
+                    "errors":        result["errors"],
+                    "documents":     doc_infos,
+                },
+            })
+
+        except Exception as e:
+            logger.error(f"Upload SSE error: {e}")
+            yield _sse({"type": "error", "detail": str(e)})
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("", response_model=DocumentListResponse)
